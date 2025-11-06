@@ -1134,3 +1134,228 @@ TEST(memory_module, addr_boundary_at_capacity)
     
     ram_destroy(memory);
 }
+
+TEST(memory_module, write_addr_at_size_boundary)
+{
+    struct RAM* memory = ram_init();
+    
+    struct RAM_VALUE val;
+    val.value_type = RAM_TYPE_INT;
+    val.types.i = 100;
+    ram_write_cell_by_name(memory, val, "x");
+    
+    val.types.i = 999;
+    bool success = ram_write_cell_by_addr(memory, val, 1);
+    ASSERT_FALSE(success);
+    
+    ram_destroy(memory);
+}
+
+TEST(memory_module, read_addr_at_size_boundary)
+{
+    struct RAM* memory = ram_init();
+    
+    struct RAM_VALUE val;
+    val.value_type = RAM_TYPE_INT;
+    val.types.i = 100;
+    ram_write_cell_by_name(memory, val, "x");
+    ram_write_cell_by_name(memory, val, "y");
+    
+    struct RAM_VALUE* v = ram_read_cell_by_addr(memory, 2);
+    ASSERT_TRUE(v == NULL);
+    
+    ram_destroy(memory);
+}
+
+TEST(memory_module, addr_at_exact_size_minus_one)
+{
+    struct RAM* memory = ram_init();
+    
+    struct RAM_VALUE val;
+    val.value_type = RAM_TYPE_INT;
+    
+    val.types.i = 10;
+    ram_write_cell_by_name(memory, val, "a");
+    val.types.i = 20;
+    ram_write_cell_by_name(memory, val, "b");
+    val.types.i = 30;
+    ram_write_cell_by_name(memory, val, "c");
+    
+    struct RAM_VALUE* v = ram_read_cell_by_addr(memory, 2);
+    ASSERT_TRUE(v != NULL);
+    ASSERT_EQ(v->types.i, 30);
+    ram_free_value(v);
+
+    val.types.i = 999;
+    bool success = ram_write_cell_by_addr(memory, val, 2);
+    ASSERT_TRUE(success);
+    
+    ram_destroy(memory);
+}
+
+TEST(memory_module, sequential_write_by_addr)
+{
+    struct RAM* memory = ram_init();
+    
+    struct RAM_VALUE val;
+    val.value_type = RAM_TYPE_INT;
+
+    val.types.i = 1;
+    ram_write_cell_by_name(memory, val, "a");
+    ram_write_cell_by_name(memory, val, "b");
+    ram_write_cell_by_name(memory, val, "c");
+    
+    for (int i = 0; i < 3; i++) {
+        val.types.i = i * 100;
+        bool success = ram_write_cell_by_addr(memory, val, i);
+        ASSERT_TRUE(success);
+    }
+
+    for (int i = 0; i < 3; i++) {
+        struct RAM_VALUE* v = ram_read_cell_by_addr(memory, i);
+        ASSERT_TRUE(v != NULL);
+        ASSERT_EQ(v->types.i, i * 100);
+        ram_free_value(v);
+    }
+    
+    ram_destroy(memory);
+}
+
+TEST(memory_module, get_addr_all_variables)
+{
+    struct RAM* memory = ram_init();
+    
+    struct RAM_VALUE val;
+    val.value_type = RAM_TYPE_INT;
+    val.types.i = 1;
+    
+    char names[5][10] = {"var0", "var1", "var2", "var3", "var4"};
+    
+    for (int i = 0; i < 5; i++) {
+        ram_write_cell_by_name(memory, val, names[i]);
+    }
+    
+    for (int i = 0; i < 5; i++) {
+        int addr = ram_get_addr(memory, names[i]);
+        ASSERT_GE(addr, 0);
+        ASSERT_LT(addr, 5);
+    }
+    
+    ram_destroy(memory);
+}
+
+TEST(memory_module, addr_operations_empty_memory)
+{
+    struct RAM* memory = ram_init();
+
+    int addr = ram_get_addr(memory, "nonexistent");
+    ASSERT_EQ(addr, -1);
+
+    struct RAM_VALUE* v = ram_read_cell_by_addr(memory, 0);
+    ASSERT_TRUE(v == NULL);
+
+    struct RAM_VALUE val;
+    val.value_type = RAM_TYPE_INT;
+    val.types.i = 100;
+    bool success = ram_write_cell_by_addr(memory, val, 0);
+    ASSERT_FALSE(success);
+    
+    ram_destroy(memory);
+}
+
+TEST(memory_module, alternating_operations)
+{
+    struct RAM* memory = ram_init();
+    
+    struct RAM_VALUE val;
+    val.value_type = RAM_TYPE_INT;
+
+    val.types.i = 100;
+    ram_write_cell_by_name(memory, val, "a");
+ 
+    val.types.i = 200;
+    bool success = ram_write_cell_by_addr(memory, val, 0);
+    ASSERT_TRUE(success);
+
+    val.types.i = 300;
+    ram_write_cell_by_name(memory, val, "b");
+
+    val.types.i = 400;
+    success = ram_write_cell_by_addr(memory, val, 1);
+    ASSERT_TRUE(success);
+
+    struct RAM_VALUE* v_a = ram_read_cell_by_name(memory, "a");
+    struct RAM_VALUE* v_b = ram_read_cell_by_name(memory, "b");
+    
+    ASSERT_TRUE(v_a != NULL && v_b != NULL);
+    ASSERT_EQ(v_a->types.i, 200);
+    ASSERT_EQ(v_b->types.i, 400);
+    
+    ram_free_value(v_a);
+    ram_free_value(v_b);
+    ram_destroy(memory);
+}
+
+TEST(memory_module, addr_with_single_variable)
+{
+    struct RAM* memory = ram_init();
+    
+    struct RAM_VALUE val;
+    val.value_type = RAM_TYPE_INT;
+    val.types.i = 42;
+    
+    ram_write_cell_by_name(memory, val, "only");
+
+    int addr = ram_get_addr(memory, "only");
+    ASSERT_EQ(addr, 0);
+
+    struct RAM_VALUE* v = ram_read_cell_by_addr(memory, 0);
+    ASSERT_TRUE(v != NULL);
+    ASSERT_EQ(v->types.i, 42);
+    ram_free_value(v);
+  
+    v = ram_read_cell_by_addr(memory, 1);
+    ASSERT_TRUE(v == NULL);
+
+    val.types.i = 999;
+    bool success = ram_write_cell_by_addr(memory, val, 0);
+    ASSERT_TRUE(success);
+
+    success = ram_write_cell_by_addr(memory, val, 1);
+    ASSERT_FALSE(success);
+    
+    ram_destroy(memory);
+}
+
+TEST(memory_module, boundary_after_each_growth)
+{
+    struct RAM* memory = ram_init();
+    
+    struct RAM_VALUE val;
+    val.value_type = RAM_TYPE_INT;
+   
+    for (int i = 0; i < 4; i++) {
+        char name[10];
+        sprintf(name, "v%d", i);
+        val.types.i = i;
+        ram_write_cell_by_name(memory, val, name);
+    }
+
+    val.types.i = 999;
+    bool success = ram_write_cell_by_addr(memory, val, 4);
+    ASSERT_FALSE(success);
+    
+    char name[10];
+    sprintf(name, "v%d", 4);
+    val.types.i = 4;
+    ram_write_cell_by_name(memory, val, name);
+
+    val.types.i = 999;
+    success = ram_write_cell_by_addr(memory, val, 5);
+    ASSERT_FALSE(success);
+    
+    success = ram_write_cell_by_addr(memory, val, 4);
+    ASSERT_TRUE(success);
+    
+    ram_destroy(memory);
+}
